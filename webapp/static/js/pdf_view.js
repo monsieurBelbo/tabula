@@ -309,6 +309,8 @@ Tabula.PDFView = Backbone.View.extend({
           if (imgAreaSelectAPIObj === false) return;
           imgAreaSelectAPIObj.cancelSelections();
       });
+
+      this._buildTabulaExtractorCommand();
     },
 
     restore_detected_tables: function(){
@@ -347,6 +349,8 @@ Tabula.PDFView = Backbone.View.extend({
             this.showSelectionThumbnail(imgAreaSelectAPIObj.getImg(),
                                         selection_to_clone);
         }, this);
+
+        this._buildTabulaExtractorCommand();
     },
 
     query_all_data : function(){
@@ -552,10 +556,59 @@ Tabula.PDFView = Backbone.View.extend({
             y2: selection.y2 * scale,
             page: $(img).data('page')
         };
+
+        // Build the tabula-extractor command
+        this._buildTabulaExtractorCommand();
+        
+
         if(!this.noModalAfterSelect){
             this.doQuery(this.PDF_ID, [coords]);
         }
         this.toggleDownloadAllAndClearButtons();
+    },
+
+    _buildTabulaExtractorCommand: function() {
+        var all_coords = [];
+          imgAreaSelects.forEach(function(imgAreaSelectAPIObj){
+
+              if (imgAreaSelectAPIObj === false) return;
+
+              var thumb_width = imgAreaSelectAPIObj.getImg().width();
+              var thumb_height = imgAreaSelectAPIObj.getImg().height();
+
+              var pdf_width = parseInt(imgAreaSelectAPIObj.getImg().data('original-width'));
+              var pdf_height = parseInt(imgAreaSelectAPIObj.getImg().data('original-height'));
+              var pdf_rotation = parseInt(imgAreaSelectAPIObj.getImg().data('rotation'));
+
+              var scale = (Math.abs(pdf_rotation) == 90 ? pdf_height : pdf_width) / thumb_width;
+
+              imgAreaSelectAPIObj.getSelections().forEach(function(selection){
+                  new_coord = {
+                      x1: selection.x1 * scale,
+                      x2: selection.x2 * scale,
+                      y1: selection.y1 * scale,
+                      y2: selection.y2 * scale,
+                      page: imgAreaSelectAPIObj.getImg().data('page')
+                  }
+                  all_coords.push(new_coord);
+              });
+          });
+
+          var areas = _.groupBy(all_coords, function(coord) { return coord.x1+","+coord.x2+","+coord.y1+","+coord.y2 });
+          console.log(areas);
+
+          var commands = [];
+
+          for (hash in areas) {
+            var first = _.first(areas[hash]);
+            var pages = [];
+            areas[hash].forEach(function(area) { if (pages.indexOf(area.page) < 0) pages.push(area.page) })
+            commands.push("jruby -S tabula" + " --pages " + pages.join(",") + " --area " + [first.y1,first.x1,first.y2,first.x2].join(","))
+          }
+
+          console.log(commands);
+
+          $("#tabula-extractor").val(commands.join('\n'));
     },
 
     _onSelectCancel: function(img, selection, selectionId) {
